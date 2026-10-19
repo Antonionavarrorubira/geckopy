@@ -83,6 +83,7 @@ from geckopy.gather_kcats import (
     kcats_from_brenda,
     kcats_from_dlkcat,
     kcats_from_ec_tree,
+    kcats_from_homologs,
     kcats_from_okp,
     load_kcat_source,
     merge_dlkcat_and_fuzzy_kcats,  # deprecated; alias of merge_kcats
@@ -161,7 +162,13 @@ from geckopy.utilities import (
     save_ec_model,
 )
 
+from geckopy.upgrade import convert_custom_kcats, upgrade_ec_model, upgrade_project
+
 __all__ = [
+    # Upgrades
+    "convert_custom_kcats",
+    "upgrade_ec_model",
+    "upgrade_project",
     # Adapter
     "ModelAdapter",
     "ModelParameters",
@@ -207,6 +214,7 @@ __all__ = [
     "kcats_from_brenda",
     "kcats_from_dlkcat",
     "kcats_from_ec_tree",
+    "kcats_from_homologs",
     "kcats_from_okp",
     "load_kcat_source",
     "merge_dlkcat_and_fuzzy_kcats",  # deprecated; alias of merge_kcats

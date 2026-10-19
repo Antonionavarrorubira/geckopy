@@ -124,9 +124,10 @@ fill_eccodes_from_database(ec_model, uniprot_db, kegg_db=kegg_db)
 # `dlkcat.tsv`, `okp_<method>.tsv`, `custom.tsv`), which `assign_kcats`
 # combines in STEP 26-31; `[kcat_assignment]` in model_adapter.toml sets
 # how. `update_kcat_sources(ec_model)` gathers all sources that the
-# configuration needs in one call. The BRENDA data ships with geckopy. When BRENDA has no value for
-# S. cerevisiae itself, the value of the phylogenetically closest
-# organism is used, based on the KEGG phylogenetic distances in
+# configuration needs in one call. geckopy downloads its BRENDA files
+# once (toolbox-assets release `brenda-2026.1-1`). When BRENDA has no
+# value for S. cerevisiae itself, the value of the phylogenetically
+# closest organism is used, based on the KEGG phylogenetic distances in
 # `data/PhylDist.mat`. That file (~5 MB) is downloaded from RAVEN on
 # the first run.
 
@@ -203,6 +204,26 @@ print(f"DLKcat predictions: {len(kcat_list_dlkcat)} rows")
 # %%
 kcat_decisions, kcat_report = assign_kcats(ec_model, uniprot_db=uniprot_db)
 print(kcat_decisions["stage"].value_counts().to_string())
+
+# %% [markdown]
+# **Choosing a kcat strategy.** This tutorial reproduces the published
+# ecYeastGEM. For a new ecModel, the preset in model_adapter.toml chooses
+# how kcats are found:
+#
+# - `brenda_ec_tree` (the default): the organism's own BRENDA value, else
+#   the median of the EC number's measurements (`kcats_from_ec_tree`); the
+#   OpenKineticsPredictor (OKP) methods combined for reactions without an
+#   EC number.
+# - `ec_tree_okp`: the EC tree and the OKP methods combined for every
+#   reaction, weighted by how reliable each is.
+# - `okp`: the OKP methods combined only, for when the model's EC numbers
+#   are not trusted.
+#
+# Custom kcats (`data/kcats/custom.tsv`) come first in every preset.
+# Compare presets with `collect_kcats` before choosing. An old
+# `data/customKcats.tsv` becomes `data/kcats/custom.tsv` with
+# `convert_custom_kcats(ec_model)`, and `geckopy upgrade <project>` lists
+# all steps from a GECKO 3 project to this layout.
 
 # %% [markdown]
 # **STEP 32** Set the upper bound of the protein pool exchange.

@@ -22,7 +22,7 @@ import pandas as pd
 from ..databases import load_brenda_data, load_brenda_measurements, load_dlkcat_ignore_lists, load_phyl_dist
 from .ec_tree import ECTree
 from .fuzzy_kcat_matching import fuzzy_kcat_matching
-from .kcat_sources import kcat_source_file, save_kcat_source
+from .kcat_sources import format_number, kcat_source_file, save_kcat_source
 from .open_kinetics_predictor import fetch_open_kinetics_predictor, submit_open_kinetics_predictor
 from .open_kinetics_predictor.parse_output import parse_okp_output
 from .read_dlkcat_output import read_dlkcat_output
@@ -99,7 +99,8 @@ def kcats_from_brenda(
         default ``save_as`` the file then only holds those reactions.
     brenda, phyl_dist
         Loaded BRENDA data and KEGG phylogenetic distances (default: loaded
-        from the adapter's folders).
+        from the adapter's folders; ``PhylDist.mat`` is downloaded there
+        when missing).
     save, save_as
         Write the source file, and its name without ``.tsv``.
     adapter
@@ -124,7 +125,12 @@ def kcats_from_brenda(
     if brenda is None:
         brenda = load_brenda_data(folder)
     if phyl_dist is None:
-        phyl_dist = load_phyl_dist(adapter.get_phyl_dist_path())
+        phyl_path = Path(adapter.get_phyl_dist_path())
+        if not phyl_path.is_file():
+            from ..databases import download_phyl_dist
+
+            download_phyl_dist(phyl_path)
+        phyl_dist = load_phyl_dist(phyl_path)
     kcat_list = fuzzy_kcat_matching(
         model, brenda, phyl_dist, ec_rxns=ec_rxns,
         force_wildcard_level=force_wildcard_level, aggregate=aggregation, adapter=adapter,
@@ -144,17 +150,16 @@ def kcats_from_brenda(
 
 def _measurements(adapter: "ModelAdapter") -> pd.DataFrame:
     """The BRENDA measurement table of the adapter's BRENDA folder, or of
-    geckopy's own BRENDA files when that folder has none."""
-    bundled = Path(__file__).resolve().parents[1] / "data" / "brenda"
+    geckopy's BRENDA release when that folder has none."""
+    from ..databases import fetch_brenda_asset
+
     folder = Path(adapter.get_brenda_db_folder())
     try:
         return load_brenda_measurements(folder)
     except FileNotFoundError:
-        if folder.resolve() == bundled:
-            raise
-        table = load_brenda_measurements(bundled)
-        logger.warning("%s has no measurements.tsv; using geckopy's BRENDA measurement table (%s).",
-                       folder, table.attrs.get("release", ""))
+        table = load_brenda_measurements(fetch_brenda_asset(["measurements.tsv"]))
+        logger.warning("%s has no measurements.tsv; using the BRENDA measurement table of %s (%s).",
+                       folder, table.attrs.get("release", ""), "toolbox-assets")
         return table
 
 
@@ -405,6 +410,9 @@ def kcats_from_okp(
     adapter = _adapter(model, adapter, "kcats_from_okp needs params.path")
     if not method:
         method = adapter.params.okp.method
+    if method in ("CatPred", "TurNup"):
+        raise ValueError(f"{method} reads whole reactions (substrate set{', and products' if method == 'TurNup' else ''}); "
+                         "kcats_from_okp submits enzyme-substrate pairs only.")
     ec_rxns = _rxn_subset(ec_rxns)
     tag = re.sub(r"[^A-Za-z0-9]+", "_", method).lower()
     data_dir = Path(adapter.params.path) / "data"
@@ -456,6 +464,9 @@ def kcats_from_okp(
         parameters: dict = {"method": method}
         if "ecRxns" in job:
             parameters["ec_rxns"] = int(job["ecRxns"])
+        if "similarity" in kcat_list:
+            kcat_list = kcat_list.assign(detail=[f"similarity={format_number(v)}" if pd.notna(v) else ""
+                                                 for v in kcat_list["similarity"]])
         path = save_kcat_source(model, kcat_list, name, adapter=adapter, generator="kcats_from_okp",
                                 parameters=parameters, data=f"OKP job {job['jobId']}")
         logger.info("OKP (%s) kcats written to %s", method, path)

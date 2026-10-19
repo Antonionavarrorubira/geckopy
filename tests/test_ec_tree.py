@@ -11,7 +11,7 @@ import pandas as pd
 import pytest
 
 from geckopy import ModelAdapter, make_ec_model
-from geckopy.databases import load_brenda_measurements
+from geckopy.databases import fetch_brenda_asset, load_brenda_measurements
 from geckopy.gather_kcats import (
     assign_kcats,
     collect_kcats,
@@ -57,8 +57,12 @@ def test_ec_tree_worked_example():
         ECTree(_table(), k=0)
 
 
-def test_bundled_measurement_table():
-    folder = Path(__file__).parents[1] / "src" / "geckopy" / "data" / "brenda"
+def test_brenda_asset():
+    """geckopy's BRENDA release: the four tables, the same release in each."""
+    folder = fetch_brenda_asset()
+    assert {"kcat.tsv", "measurements.tsv", "mw.tsv", "sa.tsv"} <= {p.name for p in folder.glob("*.tsv")}
+    with open(folder / "kcat.tsv", encoding="utf-8") as f:
+        assert f.readline().startswith("# BRENDA release 2026.1")
     t = load_brenda_measurements(folder)
     assert t.attrs["release"].startswith("BRENDA release ")
     assert len(t) > 50000 and (t["kcat"] > 0).all()
@@ -105,7 +109,7 @@ def test_kcats_from_ec_tree_writes_file(tmp_path):
     assert meta["data"] == "BRENDA release test"
     assert set(records["source"]) == {"ec_tree"}
     assert records["detail"].str.match(r"^n=\d+; depth=[234]$").all()
-    # Without a measurement table in the project, geckopy's own is used.
+    # Without a measurement table in the project, geckopy's BRENDA release is used.
     kcats_from_ec_tree(model, adapter=adapter, save_as="ec_tree_bundled")
     _, meta = read_kcat_source(project / "data" / "kcats" / "ec_tree_bundled.tsv")
     assert meta["data"].startswith("BRENDA release ")
@@ -117,7 +121,8 @@ def test_default_preset_is_brenda_ec_tree(tmp_path):
 
     config = kcat_assignment_config(adapter)
     assert config.preset == "brenda_ec_tree"
-    assert config.stages[0].sources == ["custom", "database_top", "ec_tree", "dlkcat"]
+    assert config.stages[0].sources == ["custom", "database_top", "ec_tree"]
+    assert (config.stages[1].action, config.stages[1].sources) == ("combine", ["okp"])
     assert config.stages[0].top_origin_limit == 1
     assert config.sources["ec_tree"] == {"k": 5}
 
@@ -131,7 +136,8 @@ def test_brenda_ec_tree_preset(tmp_path):
         f.write("# BRENDA release test\n")
         table[["ec", "kcat"]].to_csv(f, sep="\t", index=False)
     report = update_kcat_sources(model, dry_run=True, adapter=adapter)
-    assert list(report["source"]) == ["custom", "brenda", "ec_tree", "dlkcat"]
+    assert list(report["source"])[:3] == ["custom", "brenda", "ec_tree"]
+    assert all(s.startswith("okp_") for s in report["source"][3:]) and len(report) == 11
     brenda = kcats_from_brenda(model, aggregation="median", adapter=adapter)
     kcats_from_ec_tree(model, adapter=adapter)
     decisions, rep, decided = collect_kcats(model, adapter=adapter, write_report=False)
@@ -143,7 +149,7 @@ def test_brenda_ec_tree_preset(tmp_path):
         if src.startswith("brenda"):
             assert rxn in origin1 and "origin=1" in src
         else:
-            assert src in ("custom", "ec_tree", "dlkcat")
+            assert src in ("custom", "ec_tree")
     assert (decisions["source"] == "ec_tree").any()
     # The ec_tree file records k = 5 and the project's BRENDA release: current.
     report = update_kcat_sources(model, dry_run=True, adapter=adapter).set_index("source")["status"]
