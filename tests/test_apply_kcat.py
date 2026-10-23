@@ -288,6 +288,44 @@ def test_light_skips_isozyme_with_zero_kcat():
     ) == pytest.approx(expected, rel=1e-12)
 
 
+def test_light_free_mode_zero_kcat_isozyme_leaves_reaction_unconstrained():
+    """uncosted_isozymes="free" follows MATLAB applyKcatConstraints: an
+    isozyme with kcat 0 has cost 0, the minimum, so the reaction gets no
+    prot_pool coefficient even though the other isozyme has a kcat."""
+    ec = _ectestgem_light_model()
+    ec.ec.kcat[ec.ec.rxns.index("001_R2")] = 0.0
+    ec.ec.kcat[ec.ec.rxns.index("002_R2")] = 7.0
+    ec.ec.kcat[ec.ec.rxns.index("001_R3")] = 10.0
+    apply_kcat_constraints(ec, uncosted_isozymes="free")
+    assert _get_s_coef(ec.reactions.get_by_id("R2"), "prot_pool") == 0.0
+    assert _get_s_coef(ec.reactions.get_by_id("R3"), "prot_pool") != 0.0
+
+
+def test_light_free_mode_isozyme_without_enzyme_leaves_reaction_unconstrained():
+    """An isozyme row whose gene is not in uniprot.tsv (empty rxn_enz_mat
+    row) costs nothing in MATLAB, so "free" leaves the reaction open while
+    the default "ignore" costs it by the remaining isozyme."""
+    ec = _ectestgem_light_model()
+    i_complex = ec.ec.rxns.index("001_R2")
+    i_single = ec.ec.rxns.index("002_R2")
+    ec.ec.kcat[i_complex] = 50.0
+    ec.ec.kcat[i_single] = 50.0
+    mat = ec.ec.rxn_enz_mat.tolil()
+    mat[i_single, :] = 0
+    ec.ec.rxn_enz_mat = mat.tocsr()
+
+    apply_kcat_constraints(ec)
+    assert _get_s_coef(ec.reactions.get_by_id("R2"), "prot_pool") < 0
+    apply_kcat_constraints(ec, uncosted_isozymes="free")
+    assert _get_s_coef(ec.reactions.get_by_id("R2"), "prot_pool") == 0.0
+
+
+def test_light_uncosted_isozymes_rejects_unknown_value():
+    ec = _ectestgem_light_model()
+    with pytest.raises(ValueError, match="uncosted_isozymes"):
+        apply_kcat_constraints(ec, uncosted_isozymes="cheapest")
+
+
 def test_light_no_isozyme_with_kcat_clears_constraint():
     """All isozymes have kcat == 0 -> no prot_pool coefficient written."""
     ec = _ectestgem_light_model()

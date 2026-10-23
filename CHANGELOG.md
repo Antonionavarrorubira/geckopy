@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased (fork: Antonionavarrorubira/geckopy, branch ecmodel-builder)
+
+* `apply_kcat_constraints` gains `uncosted_isozymes="ignore" | "free"`
+  (gecko-light only). `"free"` reproduces MATLAB `applyKcatConstraints`:
+  an isozyme row with kcat 0, no matched enzyme or an unknown MW has cost
+  0, so the reaction stays unconstrained. The default `"ignore"` keeps the
+  previous behaviour (cost the reaction by its other isozymes). With
+  `"free"`, light ecModels of E. coli core and iML1515 built by
+  ecmodel_builder match the MATLAB build coefficient for coefficient.
+
 ## 4.0.0b1 — 2026-09-08
 
 Version realignment: geckopy numbering will be aligned with GECKO (MATLAB),

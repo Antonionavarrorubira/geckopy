@@ -26,6 +26,8 @@ from .populate_ec import split_light_rxn_id
 def apply_kcat_constraints(
     model: "EcModel",
     update_rxns: list[str] | None = None,
+    *,
+    uncosted_isozymes: str = "ignore",
 ) -> None:
     """Translate ec.kcat values into stoichiometric coefficients.
 
@@ -61,6 +63,15 @@ def apply_kcat_constraints(
     update_rxns
         Reaction IDs (from ``model.ec.rxns``) to update. If None,
         updates all entries.
+    uncosted_isozymes
+        Gecko-light only: what an isozyme row without a usable cost does
+        (kcat 0, no enzyme matched in ``ec.rxn_enz_mat``, or an enzyme
+        with unknown MW). ``"ignore"`` (default) skips the row and costs
+        the reaction by its other isozymes. ``"free"`` reproduces MATLAB
+        GECKO's ``applyKcatConstraints``, where such a row has cost 0 and,
+        being the cheapest, leaves the whole reaction unconstrained -- e.g.
+        a reaction that a spontaneous pseudo-gene or a protein missing from
+        uniprot.tsv can also catalyse.
 
     Raises
     ------
@@ -74,7 +85,7 @@ def apply_kcat_constraints(
         still cleared in this case; nothing is written afterward.
     """
     if model.ec.gecko_light:
-        _apply_kcat_constraints_light(model, update_rxns)
+        _apply_kcat_constraints_light(model, update_rxns, uncosted_isozymes)
         return
 
     ec_rxn_ids = model.ec.rxns
@@ -172,6 +183,7 @@ def apply_kcat_constraints(
 def _apply_kcat_constraints_light(
     model: "EcModel",
     update_rxns: list[str] | None,
+    uncosted_isozymes: str = "ignore",
 ) -> None:
     """Write the lowest-cost-isozyme ``prot_pool`` coefficient on each
     affected cobra reaction.
@@ -198,6 +210,11 @@ def _apply_kcat_constraints_light(
         means update every cobra reaction backed by at least one
         ec.rxns row.
     """
+    if uncosted_isozymes not in ("ignore", "free"):
+        raise ValueError(
+            f"uncosted_isozymes must be 'ignore' or 'free', not "
+            f"{uncosted_isozymes!r}"
+        )
     ec_rxn_ids = model.ec.rxns
 
     if update_rxns is None:
@@ -248,18 +265,23 @@ def _apply_kcat_constraints_light(
         best_cost = float("inf")
         best_mw_sum = 0.0
         best_kcat = 0.0
+        has_free_row = False
         for r in ec_rows:
             kcat = float(model.ec.kcat[r])
             if kcat <= 0:
+                has_free_row = True
                 continue
             row = rxn_enz_mat_csr.getrow(r)
             if row.nnz == 0:
+                has_free_row = True
                 continue
             mw_for_row = mw[row.indices]
             if np.any(np.isnan(mw_for_row)):
+                has_free_row = True
                 continue
             mw_sum = float(np.sum(row.data * mw_for_row))
             if mw_sum <= 0:
+                has_free_row = True
                 continue
             cost = mw_sum / kcat
             if cost < best_cost:
@@ -269,6 +291,9 @@ def _apply_kcat_constraints_light(
 
         if best_kcat == 0.0:
             continue  # no valid isozyme; leave the reaction at cleared
+        if has_free_row and uncosted_isozymes == "free":
+            cleared_only = False
+            continue  # MATLAB: a zero-cost isozyme is the cheapest one
         coef = -best_mw_sum / (best_kcat * 3600.0)
         rxn.add_metabolites({pool_met: coef}, combine=False)
         cleared_only = False
