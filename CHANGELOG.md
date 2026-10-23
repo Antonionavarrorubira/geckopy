@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased (fork: Antonionavarrorubira/geckopy, branch ecmodel-builder)
+## 4.0.0b1+ecmb.1 — 2026-10-23 (fork: Antonionavarrorubira/geckopy, branch ecmodel-builder)
 
 * `apply_kcat_constraints` gains `uncosted_isozymes="ignore" | "free"`
   (gecko-light only). `"free"` reproduces MATLAB `applyKcatConstraints`:
